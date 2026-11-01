@@ -48,7 +48,7 @@ void ConfigFan::Load() {
 	GetReg("KeyboardShortcut", &keyShortcuts, 1);
 	GetReg("KeepSystemMode", &keepSystem, 1);
 	//GetReg("DPTF", &needDPTF, 1);
-	GetReg("PollingRate", &pollingRate, 750);
+	GetReg("PollingRate", &pollingRate, 50);
 	GetReg("OCEnable", &ocEnable);
 	GetReg("DiskSensors", &diskSensors, 1);
 	GetReg("NumLockActive", &numlockActive, 1);

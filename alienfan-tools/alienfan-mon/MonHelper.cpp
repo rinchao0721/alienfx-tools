@@ -193,56 +193,40 @@ void CMonProc(LPVOID param) {
 
 	//DebugPrint("Mon: Poll started\n");
 	if (src->inControl && active) {
+		// 强行保持 Manual 模式，防止驱动/EC在后台偷切模式
+		acpi->Unlock();
+
 		// check power mode
 		src->powerMode = src->GetSensorData(true);
 		src->SetCurrentMode();
 
-		if (!src->powerMode && src->modified) {
-			//DebugPrint("Mon: Boost calc started\n");
-			int cBoost;
-			for (auto& cIter : active->fanControls) {
-				// Check boost
-				byte fanID = cIter.first;
-				int curBoost = 0;
-				for (auto fIter = cIter.second.begin(); fIter != cIter.second.end(); fIter++) {
-					if (fIter->second.active) {
-						sen_block* cur = &fIter->second;
-						WORD senID = fIter->first;
-						auto k = cur->points.begin() + 1;
-						for (; k != cur->points.end() && src->senValues[senID] > k->temp; k++);
-						auto ko = k - 1;
-						cBoost = k == cur->points.end() || k->temp == ko->temp ? ko->boost :
-							ko->boost + ((k->boost - ko->boost) * (src->senValues[senID] - ko->temp))
-							/ (k->temp - ko->temp);
-						src->senBoosts[fanID][senID] = cBoost;
-						if (cBoost > curBoost) {
-							curBoost = cBoost;
-							src->lastBoost[fanID] = senID;
-						}
+		// 忽略 powerMode 状态，无条件持续下发风扇转速
+		int cBoost;
+		for (auto& cIter : active->fanControls) {
+			// Check boost
+			byte fanID = cIter.first;
+			int curBoost = 0;
+			for (auto fIter = cIter.second.begin(); fIter != cIter.second.end(); fIter++) {
+				if (fIter->second.active) {
+					sen_block* cur = &fIter->second;
+					WORD senID = fIter->first;
+					auto k = cur->points.begin() + 1;
+					for (; k != cur->points.end() && src->senValues[senID] > k->temp; k++);
+					auto ko = k - 1;
+					cBoost = k == cur->points.end() || k->temp == ko->temp ? ko->boost :
+						ko->boost + ((k->boost - ko->boost) * (src->senValues[senID] - ko->temp))
+						/ (k->temp - ko->temp);
+					src->senBoosts[fanID][senID] = cBoost;
+					if (cBoost > curBoost) {
+						curBoost = cBoost;
+						src->lastBoost[fanID] = senID;
 					}
 				}
-				// Set boost
-				int curBoostRaw = (int)round((fan_conf->GetFanScale(fanID) * curBoost) / 100.0);
-				if (curBoostRaw < 101 || !src->fanSleep[fanID]) {
-					byte boostOld = src->acpi->GetFanBoost(fanID);
-					// Check overboost tricks...
-					if (boostOld < 90 && curBoostRaw > 100) {
-						curBoostRaw = 100;
-						src->fanSleep[fanID] = ((100 - boostOld) >> 3) + 2;
-						DebugPrint("Overboost started, fan " + to_string(fanID) + " locked for " + to_string(src->fanSleep[fanID]) + " tacts (old "
-							+ to_string(boostOld) + ", new " + to_string(curBoostRaw) + ")!\n");
-					}
-					else
-						src->fanSleep[fanID] = 0;
-					if (curBoostRaw != boostOld) {
-						int res = acpi->SetFanBoost(fanID, curBoostRaw);
-						//DebugPrint("Boost for fan#" + to_string(fanID) + " changed from " + to_string(boostOld)
-						//	+ " to " + to_string(curBoostRaw) + ", result " + to_string(res) + "\n");
-					}
-				}
-				else
-					--src->fanSleep[fanID];
 			}
+			// Set boost
+			int curBoostRaw = (int)round((fan_conf->GetFanScale(fanID) * curBoost) / 100.0);
+			// 强制极速覆盖EC温控
+			acpi->SetFanBoost(fanID, curBoostRaw);
 		}
 	}
 	//DebugPrint("Mon: poll ended\n");
